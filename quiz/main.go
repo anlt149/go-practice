@@ -2,37 +2,78 @@ package main
 
 import (
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 )
 
 func main() {
-	file, err := os.Open("quiz.csv")
+	csvFile := flag.String("csv", "quiz.csv", "CSV file in the format of question,answer")
+	timeLimit := flag.Int("limit", 10, "The time limit for the quiz in seconds")
+	flag.Parse()
+
+	file, err := os.Open(*csvFile)
 
 	if err != nil {
-		fmt.Errorf("Error while loading quiz file....", err)
-		return
+		Exit(fmt.Sprintf("Error while loading quiz, file:%s, error:%s", *csvFile, err))
+		os.Exit(1)
 	}
 
 	reader := csv.NewReader(file)
 
-	records, err := reader.ReadAll()
+	lines, err := reader.ReadAll()
 
 	if err != nil {
-		fmt.Errorf("Error while reading file....", err)
-		return
+		Exit("Error while parsing quiz file")
 	}
 
-	for i, record := range records {
-		fmt.Printf("\nProblem #%d: %s + %s = ", i+1, record[0], record[1])
+	quiz := ParseLines(lines)
+	timer := time.NewTimer(time.Duration(*timeLimit) * time.Second)
 
-		var answer string
-		fmt.Scanln(&answer)
+	correctAnwser := 0
 
-		if answer != record[2] {
-			fmt.Printf("\nYou scored %d out of %d", i+1, len(records))
+	for i, q := range quiz {
+		fmt.Printf("Problem #%d: %s = \n", i, q.question)
+		answerCh := make(chan string)
+		go func() {
+			var userAnswer string
+			fmt.Scanf("%s\n", &userAnswer)
+			answerCh <- userAnswer
+		}()
+
+		select {
+		case <-timer.C:
+			fmt.Printf("You scored %d out of %d.\n", correctAnwser, len(quiz))
 			return
+		case userAnswer := <-answerCh:
+			if userAnswer == q.answer {
+				correctAnwser++
+			}
+
 		}
 	}
+	fmt.Printf("You scored %d out of %d.\n", correctAnwser, len(quiz))
+}
 
+func ParseLines(lines [][]string) []quiz {
+	ret := make([]quiz, len(lines))
+	for i, line := range lines {
+		ret[i] = quiz{
+			question: line[0],
+			answer:   strings.TrimSpace(line[1]),
+		}
+	}
+	return ret
+}
+
+type quiz struct {
+	question string
+	answer   string
+}
+
+func Exit(msg string) {
+	fmt.Println(msg)
+	os.Exit(1)
 }
